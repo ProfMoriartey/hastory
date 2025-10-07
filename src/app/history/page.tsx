@@ -50,11 +50,20 @@ export default function HistoryPage() {
       });
 
       if (!res.ok) {
-        const err: { error?: string } = await res.json();
-        throw new Error(err.error ?? "Request failed");
+        // ✅ Safely parse and type the error JSON
+        const errJson = (await res.json().catch(() => ({}))) as unknown;
+        const err = errJson as { error?: string };
+        throw new Error(err?.error ?? "Request failed");
       }
 
-      const data: ApiResponse = await res.json();
+      // ✅ Parse and narrow the success response safely
+      const json = (await res.json().catch(() => ({}))) as unknown;
+
+      if (typeof json !== "object" || json === null) {
+        throw new Error("Invalid response format");
+      }
+
+      const data = json as ApiResponse;
       setResponse(data);
     } catch (err: unknown) {
       const error = err as Error;
