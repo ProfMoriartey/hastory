@@ -5,32 +5,34 @@ import { z } from "zod";
  */
 export const PatientHistorySchema = z.object({
   patient: z.object({
-    fullName: z.string().optional(),
-    age: z.number().nullable().optional(),
-    gender: z.string().optional(),
-    occupation: z.string().optional(),
-    maritalStatus: z.string().optional(),
-    dateOfVisit: z.string().optional(), // ISO date string
-    sourceOfHistory: z.string().optional(),
-  }),
+  fullName: z.string().nullable().optional(),
+  age: z.number().nullable().optional(),
+  gender: z.string().nullable().optional(),
+  occupation: z.string().nullable().optional(),
+  maritalStatus: z.string().nullable().optional(),
+  dateOfVisit: z.string().nullable().optional(),
+  sourceOfHistory: z.string().nullable().optional(),
+}),
+
 
   chiefComplaint: z.object({
     complaint: z.string().optional(),
     duration: z.string().optional(),
   }),
 
-  historyOfPresentIllness: z.object({
-    onset: z.string().optional(),
-    site: z.string().optional(),
-    character: z.string().optional(),
-    radiation: z.string().optional(),
-    associatedSymptoms: z.array(z.string()).optional(),
-    timing: z.string().optional(),
-    exacerbatingFactors: z.array(z.string()).optional(),
-    relievingFactors: z.array(z.string()).optional(),
-    severity: z.string().optional(),
-    chronologicalNarrative: z.string().optional(),
-  }),
+historyOfPresentIllness: z.object({
+  onset: z.union([z.string(), z.number()]).nullable().optional(),
+  site: z.union([z.string(), z.number()]).nullable().optional(),
+  character: z.union([z.string(), z.number()]).nullable().optional(),
+  radiation: z.union([z.string(), z.number()]).nullable().optional(),
+  associatedSymptoms: z.array(z.string()).nullable().optional(),
+  timing: z.union([z.string(), z.number()]).nullable().optional(),
+  exacerbatingFactors: z.array(z.string()).nullable().optional(),
+  relievingFactors: z.array(z.string()).nullable().optional(),
+  severity: z.union([z.string(), z.number()]).nullable().optional(),
+  chronologicalNarrative: z.union([z.string(), z.number()]).nullable().optional(),
+}),
+
 
   reviewOfSystems: z
     .object({
@@ -82,18 +84,17 @@ export const PatientHistorySchema = z.object({
     })
     .optional(),
 
-  socialHistory: z
-    .object({
-      smoking: z.string().optional(),
-      alcohol: z.string().optional(),
-      drugs: z.string().optional(),
-      diet: z.string().optional(),
-      exercise: z.string().optional(),
-      occupationHazards: z.string().optional(),
-      livingConditions: z.string().optional(),
-      sexualHistory: z.string().optional(),
-    })
-    .optional(),
+  socialHistory: z.object({
+  smoking: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
+  alcohol: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
+  drugs: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
+  diet: z.union([z.string(), z.number()]).nullable().optional(),
+  exercise: z.union([z.string(), z.number()]).nullable().optional(),
+  occupationHazards: z.union([z.string(), z.number()]).nullable().optional(),
+  livingConditions: z.union([z.string(), z.number()]).nullable().optional(),
+  sexualHistory: z.union([z.string(), z.number()]).nullable().optional(),
+}).optional(),
+
 
   preventiveCare: z
     .object({
@@ -103,19 +104,30 @@ export const PatientHistorySchema = z.object({
     .optional(),
 
   assessment: z
-    .object({
-      summary: z.string().optional(),
-      differentialDiagnoses: z.array(z.string()).optional(),
-    })
-    .optional(),
+  .object({
+    // Allow strings, numbers, booleans, or nulls
+    summary: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
 
-  plan: z
-    .object({
-      investigations: z.array(z.string()).optional(),
-      treatment: z.array(z.string()).optional(),
-      followUp: z.string().optional(),
-    })
-    .optional(),
+    // Allow either an array of strings or a single string (model sometimes gives a comma list)
+    differentialDiagnoses: z
+      .union([
+        z.array(z.string()),
+        z.string(),
+        z.number(),
+        z.boolean(),
+      ])
+      .nullable()
+      .optional(),
+  })
+  .optional(),
+
+ plan: z
+  .object({
+    investigations: z.array(z.string()).nullable().optional(),
+    treatment: z.array(z.string()).nullable().optional(),
+    followUp: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
+  })
+  .optional(),
 });
 
 export type PatientHistory = z.infer<typeof PatientHistorySchema>;
