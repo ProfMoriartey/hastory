@@ -22,37 +22,93 @@ interface OpenRouterResponse {
 }
 
 /** Recursively normalizes values for consistent JSON structure. */
-function normalizePatientHistory(
-  data: unknown
-): Record<string, unknown> | unknown[] | string | null {
-  if (Array.isArray(data)) {
-    return data.map((val) => normalizePatientHistory(val));
-  }
-  if (data === null || data === undefined) return null;
+function normalizePatientHistory(data: unknown): unknown {
+  const normalizeValue = (val: unknown): unknown => {
+    if (Array.isArray(val)) return val.map(normalizeValue);
 
-  switch (typeof data) {
-    case "boolean":
-      return data ? "yes" : "no";
-    case "number":
-      return String(data);
-    case "string":
-      // If comma-separated, convert to array of trimmed values
-      if (data.includes(",")) {
-        return data
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+
+      // 🧠 Convert comma-separated strings into arrays
+      if (trimmed.includes(",")) {
+        return trimmed
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
       }
-      return data;
-    case "object": {
-      const obj = data as Record<string, unknown>;
+
+      // 🧠 Convert "45 years old" → 45
+      const ageRegex = /^(\d{1,3})\s*(years?)?\s*(old)?$/i;
+      const match = ageRegex.exec(trimmed);
+      if (match) {
+        const ageString = match[1];
+        const num = ageString ? parseInt(ageString, 10) : NaN;
+        return isNaN(num) ? null : num;
+      }
+
+      // 🧠 Convert "none" / "n/a" / "no" → null
+      if (["none", "n/a", "no", "nil"].includes(trimmed.toLowerCase())) {
+        return null;
+      }
+
+      return trimmed;
+    }
+
+    if (typeof val === "number") return val;
+    if (val === true) return "yes";
+    if (val === false) return "no";
+    if (val === undefined) return null;
+    if (val === null) return null;
+
+    if (typeof val === "object" && val !== null) {
       return Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => [k, normalizePatientHistory(v)])
+        Object.entries(val).map(([k, v]) => [k, normalizeValue(v)]),
       );
     }
-    default:
-      return null;
+
+    return val;
+  };
+
+  const normalized = normalizeValue(data);
+
+  // 🧩 Force certain fields to always be arrays
+  if (
+    typeof normalized === "object" &&
+    normalized &&
+    "pastMedicalHistory" in normalized
+  ) {
+    const pmh = (normalized as Record<string, unknown>).pastMedicalHistory as
+      | Record<string, unknown>
+      | undefined;
+    if (pmh) {
+      for (const key of [
+        "chronicDiseases",
+        "hospitalizations",
+        "allergies",
+        "immunizations",
+        "transfusions",
+      ]) {
+        const val = pmh[key];
+        if (typeof val === "string") pmh[key] = [val];
+        if (val === null || val === undefined) pmh[key] = [];
+      }
+    }
   }
+
+  if (
+    typeof normalized === "object" &&
+    normalized &&
+    "medications" in normalized
+  ) {
+    const meds = (normalized as Record<string, unknown>).medications as
+      | Record<string, unknown>
+      | undefined;
+    if (meds && typeof meds.supplements === "string") {
+      meds.supplements = [meds.supplements];
+    }
+  }
+
+  return normalized;
 }
 
 export async function POST(req: Request) {
@@ -95,27 +151,33 @@ Rules:
 - Keep arrays even if empty (e.g., "associatedSymptoms": []).
 `;
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "qwen/qwen3-30b-a3b:free",
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `Doctor–patient conversation:\n${cleanedPrompt}`,
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        model: "qwen/qwen3-30b-a3b:free",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Doctor–patient conversation:\n${cleanedPrompt}` },
-        ],
-      }),
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("OpenRouter API Error:", errorText);
       return NextResponse.json(
         { error: "API request failed", details: errorText },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -130,26 +192,46 @@ Rules:
     // 🧠 Parse AI JSON safely
     let parsed: unknown;
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
+      // 🧩 Handle models that return multiple JSON objects concatenated
+      const fixedJson = rawText
+        .trim()
+        // If there are two JSON objects separated by newlines, merge them
+        .replace(/}\s*{/g, ',"')
+        // Fix the extra quote inserted above (replace ,"{ with ,")
+        .replace(/,"/g, ",")
+        // Just in case double commas appear
+        .replace(/,,+/g, ",");
+
+      parsed = JSON.parse(fixedJson);
+    } catch (err) {
       console.warn("AI returned invalid JSON:", rawText);
       return NextResponse.json(
         { error: "Model output not valid JSON", rawText },
-        { status: 422 }
+        { status: 422 },
       );
     }
 
-    const validation = PatientHistorySchema.safeParse(parsed);
+    // ✅ Normalize before validation
+    const normalizedBeforeValidation = normalizePatientHistory(parsed);
 
+    const validation = PatientHistorySchema.safeParse(
+      normalizedBeforeValidation,
+    );
     if (!validation.success) {
       console.error("Schema validation error:", validation.error.format());
       return NextResponse.json(
-        { error: "Invalid data shape", issues: validation.error.format(), rawText },
-        { status: 422 }
+        {
+          error: "Invalid data shape",
+          issues: validation.error.format(),
+          rawText,
+        },
+        { status: 422 },
       );
     }
 
-    const normalized = normalizePatientHistory(validation.data) as PatientHistory;
+    const normalized = normalizePatientHistory(
+      validation.data,
+    ) as PatientHistory;
 
     // ✅ Return validated structured data to frontend
     return NextResponse.json(normalized, { status: 200 });
@@ -158,8 +240,7 @@ Rules:
     console.error("Server error:", error);
     return NextResponse.json(
       { error: "Server error", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
-

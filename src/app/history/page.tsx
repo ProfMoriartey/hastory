@@ -50,21 +50,20 @@ export default function HistoryPage() {
       });
 
       if (!res.ok) {
-        // ✅ Safely parse and type the error JSON
         const errJson = (await res.json().catch(() => ({}))) as unknown;
         const err = errJson as { error?: string };
         throw new Error(err?.error ?? "Request failed");
       }
 
-      // ✅ Parse and narrow the success response safely
       const json = (await res.json().catch(() => ({}))) as unknown;
 
       if (typeof json !== "object" || json === null) {
         throw new Error("Invalid response format");
       }
 
-      const data = json as ApiResponse;
-      setResponse(data);
+      // ✅ The API returns the patient history directly — not wrapped in { data: ... }
+      const parsed = json as PatientHistory;
+      setResponse({ data: parsed });
     } catch (err: unknown) {
       const error = err as Error;
       setResponse({ error: error.message });
