@@ -2,8 +2,13 @@
 
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
+
+interface ApiResponse {
+  text?: string;
+  error?: string;
+  details?: string;
+}
 
 export default function HomePage() {
   const [prompt, setPrompt] = useState("");
@@ -15,15 +20,26 @@ export default function HomePage() {
     setLoading(true);
     setResponse("");
 
-    const res = await fetch("/api/ai", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
 
-    const data = await res.json();
-    setResponse(data.text);
-    setLoading(false);
+      const data = (await res.json()) as ApiResponse;
+
+      if (data.error) {
+        setResponse(`Error: ${data.error}`);
+      } else {
+        setResponse(data.text ?? "No response");
+      }
+    } catch (err) {
+      const error = err as Error;
+      setResponse(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
