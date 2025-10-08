@@ -6,8 +6,6 @@ import {
   type PatientHistory,
 } from "~/lib/patientHistorySchema";
 import { cleanTranscriptionText } from "~/lib/cleanText";
-// NOTE: Assuming normalizePatientHistory is also moved or defined here,
-// as it contains complex business logic specific to this mutation.
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -30,7 +28,9 @@ interface AnalysisResponse {
   details?: string;
 }
 
-/** Recursively normalizes values for consistent JSON structure, essential for AI output cleanup. */
+/** Recursively normalizes primitive values for cleanup (null, age, booleans)
+ * but AVOIDS complex structural changes like splitting strings into arrays.
+ */
 function normalizePatientHistory(data: unknown): unknown {
   const normalizeValue = (val: unknown): unknown => {
     if (Array.isArray(val)) return val.map(normalizeValue);
@@ -38,27 +38,21 @@ function normalizePatientHistory(data: unknown): unknown {
     if (typeof val === "string") {
       const trimmed = val.trim();
 
-      // 🧠 Convert comma-separated strings into arrays
-      if (trimmed.includes(",")) {
-        return trimmed
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
+      // 🛑 REMOVED: Logic to convert comma-separated strings to arrays
+      // We rely on the AI model to output JSON arrays correctly.
 
-      // 🧠 Convert "45 years old" → 45
+      // 🧠 Convert "45 years old" → 45 (or string if it fails)
       const ageRegex = /^(\d{1,3})\s*(years?)?\s*(old)?$/i;
       const match = ageRegex.exec(trimmed);
       if (match) {
         const ageString = match[1];
         const num = ageString ? parseInt(ageString, 10) : NaN;
-        // Keep age as string if it's the target type for the Zod schema,
-        // or ensure the final normalized object matches the schema types.
+        // Keep as number if successful, otherwise keep original trimmed string
         return isNaN(num) ? trimmed : num; 
       }
 
       // 🧠 Convert "none" / "n/a" / "no" → null
-      if (["none", "n/a", "no", "nil"].includes(trimmed.toLowerCase())) {
+      if (["none", "n/a", "no", "nil", "n/a"].includes(trimmed.toLowerCase())) {
         return null;
       }
 
@@ -86,7 +80,7 @@ function normalizePatientHistory(data: unknown): unknown {
 
   if (!normalized || typeof normalized !== "object") return normalized;
 
-  // 🧩 Force certain fields to always be arrays or handle nested structures
+  // 🧩 POST-RECURSION CLEANUP: Force string fields that should be arrays into arrays.
   
   // Past Medical History cleanup
   const pmh = normalized.pastMedicalHistory as Record<string, unknown> | undefined;
@@ -99,17 +93,26 @@ function normalizePatientHistory(data: unknown): unknown {
       "transfusions",
     ]) {
       const val = pmh[key];
-      // Convert string values to array of strings
-      if (typeof val === "string") pmh[key] = [val];
+      // Convert string values to array of strings if a single string was returned
+      if (typeof val === "string") {
+         // If a single string with commas is returned (e.g., "headache, fever"), split it here.
+         pmh[key] = val.split(",").map(s => s.trim()).filter(Boolean);
+      }
       if (val === null || val === undefined) pmh[key] = [];
     }
   }
 
   // Medications cleanup
   const meds = normalized.medications as Record<string, unknown> | undefined;
-  if (meds && typeof meds.supplements === "string") {
-    // If supplements is a string, convert it to an array of strings
-    meds.supplements = [meds.supplements];
+  if (meds) {
+      if (typeof meds.supplements === "string") {
+        // If supplements is a string, convert it to an array of strings
+        meds.supplements = [meds.supplements];
+      }
+      // Ensure 'current' is an array if present
+      if (meds.current && !Array.isArray(meds.current)) {
+          meds.current = [meds.current];
+      }
   }
 
   return normalized;
@@ -205,6 +208,7 @@ Rules:
     }
 
     // 4. Normalize before validation (essential for handling AI variability)
+    // The normalization helper now avoids converting string narratives into arrays.
     const normalizedData = normalizePatientHistory(parsed);
 
     const validation = PatientHistorySchema.safeParse(normalizedData);
@@ -218,7 +222,7 @@ Rules:
     }
 
     // 5. Final normalization and return
-    const finalData = normalizePatientHistory(validation.data) as PatientHistory;
+    const finalData = validation.data;
     
     return { data: finalData };
   } catch (err: unknown) {

@@ -1,3 +1,5 @@
+// src/lib/patientHistorySchema.ts
+
 import { z } from "zod";
 
 /**
@@ -5,58 +7,62 @@ import { z } from "zod";
  */
 export const PatientHistorySchema = z.object({
   patient: z.object({
-  fullName: z.string().nullable().optional(),
-  age: z.number().nullable().optional(),
-  gender: z.string().nullable().optional(),
-  occupation: z.string().nullable().optional(),
-  maritalStatus: z.string().nullable().optional(),
-  dateOfVisit: z.string().nullable().optional(),
-  sourceOfHistory: z.string().nullable().optional(),
-}),
-
-
-  chiefComplaint: z.object({
-    complaint: z.string().optional(),
-    duration: z.string().optional(),
+    fullName: z.string().nullable().optional(),
+    age: z.number().nullable().optional(),
+    gender: z.string().nullable().optional(),
+    occupation: z.string().nullable().optional(),
+    maritalStatus: z.string().nullable().optional(),
+    dateOfVisit: z.string().nullable().optional(), // Expect ISO string
+    sourceOfHistory: z.string().nullable().optional(),
   }),
 
-historyOfPresentIllness: z.object({
-  onset: z.union([z.string(), z.number()]).nullable().optional(),
-  site: z.union([z.string(), z.number()]).nullable().optional(),
-  character: z.union([z.string(), z.number()]).nullable().optional(),
-  radiation: z.union([z.string(), z.number()]).nullable().optional(),
-  associatedSymptoms: z.array(z.string()).nullable().optional(),
-  timing: z.union([z.string(), z.number()]).nullable().optional(),
-  exacerbatingFactors: z.array(z.string()).nullable().optional(),
-  relievingFactors: z.array(z.string()).nullable().optional(),
-  severity: z.union([z.string(), z.number()]).nullable().optional(),
-  chronologicalNarrative: z.union([z.string(), z.number()]).nullable().optional(),
-}),
+  chiefComplaint: z.object({
+    complaint: z.string().nullable().optional(),
+    duration: z.string().nullable().optional(),
+  }),
 
+  historyOfPresentIllness: z.object({
+    // Standardize all descriptive fields to string, allowing null/optional
+    onset: z.string().nullable().optional(), 
+    site: z.string().nullable().optional(),
+    character: z.string().nullable().optional(),
+    radiation: z.string().nullable().optional(),
+    timing: z.string().nullable().optional(),
+    severity: z.string().nullable().optional(),
+
+    // Array fields use .nullish() which resolves to undefined, allowing
+    // the calling code (normalizePatientHistory) to handle the default.
+    associatedSymptoms: z.array(z.string()).nullish(),
+    exacerbatingFactors: z.array(z.string()).nullish(),
+    relievingFactors: z.array(z.string()).nullish(),
+    
+    // ✅ FIX for the specific error: Enforce string and allow null/undefined
+    chronologicalNarrative: z.string().nullable().optional(), 
+  }),
 
   reviewOfSystems: z
     .object({
-      general: z.array(z.string()).optional(),
-      cardiovascular: z.array(z.string()).optional(),
-      respiratory: z.array(z.string()).optional(),
-      gastrointestinal: z.array(z.string()).optional(),
-      genitourinary: z.array(z.string()).optional(),
-      neurological: z.array(z.string()).optional(),
-      musculoskeletal: z.array(z.string()).optional(),
-      endocrine: z.array(z.string()).optional(),
-      psychiatric: z.array(z.string()).optional(),
-      skin: z.array(z.string()).optional(),
+      general: z.array(z.string()).nullish(),
+      cardiovascular: z.array(z.string()).nullish(),
+      respiratory: z.array(z.string()).nullish(),
+      gastrointestinal: z.array(z.string()).nullish(),
+      genitourinary: z.array(z.string()).nullish(),
+      neurological: z.array(z.string()).nullish(),
+      musculoskeletal: z.array(z.string()).nullish(),
+      endocrine: z.array(z.string()).nullish(),
+      psychiatric: z.array(z.string()).nullish(),
+      skin: z.array(z.string()).nullish(),
     })
     .optional(),
 
   pastMedicalHistory: z
     .object({
-      chronicDiseases: z.array(z.string()).optional(),
-      surgeries: z.array(z.string()).optional(),
-      hospitalizations: z.array(z.string()).optional(),
-      allergies: z.array(z.string()).optional(),
-      immunizations: z.array(z.string()).optional(),
-      transfusions: z.array(z.string()).optional(),
+      chronicDiseases: z.array(z.string()).nullish(),
+      surgeries: z.array(z.string()).nullish(),
+      hospitalizations: z.array(z.string()).nullish(),
+      allergies: z.array(z.string()).nullish(),
+      immunizations: z.array(z.string()).nullish(),
+      transfusions: z.array(z.string()).nullish(),
     })
     .optional(),
 
@@ -66,76 +72,66 @@ historyOfPresentIllness: z.object({
         .array(
           z.object({
             name: z.string(),
-            dose: z.string().optional(),
-            frequency: z.string().optional(),
+            dose: z.string().nullable().optional(),
+            frequency: z.string().nullable().optional(),
           })
         )
-        .optional(),
-      past: z.array(z.string()).optional(),
-      supplements: z.array(z.string()).optional(),
+        .nullish(),
+      past: z.array(z.string()).nullish(),
+      supplements: z.array(z.string()).nullish(),
     })
     .optional(),
 
   familyHistory: z
     .object({
-      diseases: z.array(z.string()).optional(),
-      relativesAffected: z.array(z.string()).optional(),
-      hereditaryConditions: z.array(z.string()).optional(),
+      diseases: z.array(z.string()).nullish(),
+      relativesAffected: z.array(z.string()).nullish(),
+      hereditaryConditions: z.array(z.string()).nullish(),
     })
     .optional(),
 
-  socialHistory: z.object({
-  smoking: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
-  alcohol: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
-  drugs: z.union([z.string(), z.boolean(), z.number()]).nullable().optional(),
-  diet: z.union([z.string(), z.number()]).nullable().optional(),
-  exercise: z.union([z.string(), z.number()]).nullable().optional(),
-  occupationHazards: z.union([z.string(), z.number()]).nullable().optional(),
-  livingConditions: z.union([z.string(), z.number()]).nullable().optional(),
-  sexualHistory: z.union([z.string(), z.number()]).nullable().optional(),
-}).optional(),
-
+  socialHistory: z
+    .object({
+      // Use z.string() and rely on normalization/coercion for non-string AI outputs
+      smoking: z.string().nullable().optional(),
+      alcohol: z.string().nullable().optional(),
+      drugs: z.string().nullable().optional(),
+      diet: z.string().nullable().optional(),
+      exercise: z.string().nullable().optional(),
+      occupationHazards: z.string().nullable().optional(),
+      livingConditions: z.string().nullable().optional(),
+      sexualHistory: z.string().nullable().optional(),
+    })
+    .optional(),
 
   preventiveCare: z
     .object({
-      immunizations: z.array(z.string()).optional(),
-      screeningTests: z.array(z.string()).optional(),
+      immunizations: z.array(z.string()).nullish(),
+      screeningTests: z.array(z.string()).nullish(),
     })
     .optional(),
 
   assessment: z
-  .object({
-    // Allow strings, numbers, booleans, or nulls
-    summary: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
+    .object({
+      summary: z.string().nullable().optional(),
 
-    // Allow either an array of strings or a single string (model sometimes gives a comma list)
-    differentialDiagnoses: z
-      .union([
-        z.array(z.string()),
-        z.string(),
-        z.number(),
-        z.boolean(),
-      ])
-      .nullable()
-      .optional(),
-  })
-  .optional(),
+      // Allow either an array of strings or a single string (model sometimes gives a comma list)
+      differentialDiagnoses: z.array(z.string()).nullish(),
+    })
+    .optional(),
 
- plan: z
-  .object({
-    investigations: z.array(z.string()).nullable().optional(),
-    treatment: z.array(z.string()).nullable().optional(),
-    followUp: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
-  })
-  .optional(),
+  plan: z
+    .object({
+      investigations: z.array(z.string()).nullish(),
+      treatment: z.array(z.string()).nullish(),
+      followUp: z.string().nullable().optional(),
+    })
+    .optional(),
 });
 
 export type PatientHistory = z.infer<typeof PatientHistorySchema>;
 
-/**
- * String version of the schema for LLM prompt usage.
- * (Used inside OpenAI messages)
- */
+// The schema string is provided below (no changes needed)
 export const PATIENT_HISTORY_SCHEMA_STRING = `
 {
   "patient": {
