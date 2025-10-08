@@ -8,20 +8,27 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import type { PatientHistory } from "~/lib/patientHistorySchema";
 
-interface ApiResponse {
+// 🎯 Import the new Server Action
+import { analyzeMedicalTextAction } from "./actions";
+
+// Match the Server Action's return type
+interface AnalysisResponse {
+  data?: PatientHistory;
   error?: string;
   details?: string;
-  data?: PatientHistory;
 }
 
 export default function HistoryPage() {
   const [prompt, setPrompt] = useState("");
-  const [response, setResponse] = useState<ApiResponse | null>(null);
+  const [response, setResponse] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // ✅ FIX: Initialize useRef with null, specifying the HTMLDivElement type
   const reportRef = useRef<HTMLDivElement | null>(null);
+
   const router = useRouter();
 
-  // ✅ PDF Export Handler
+  // ✅ PDF Export Handler (Unchanged)
   const handleDownloadPDF = async () => {
     if (!reportRef.current) return;
     const element = reportRef.current;
@@ -36,37 +43,31 @@ export default function HistoryPage() {
     pdf.save("Patient_History_Report.pdf");
   };
 
-  // ✅ Analyze Handler
+  // 🎯 Revised: Use Server Action instead of client-side fetch
   const handleAnalyze = async (): Promise<void> => {
     if (!prompt.trim()) return;
     setLoading(true);
     setResponse(null);
 
     try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
+      // 1. Call the Server Action directly
+      const result = await analyzeMedicalTextAction(prompt);
 
-      if (!res.ok) {
-        const errJson = (await res.json().catch(() => ({}))) as unknown;
-        const err = errJson as { error?: string };
-        throw new Error(err?.error ?? "Request failed");
+      // 2. Handle the structured result (data or error)
+      if (result.error) {
+        setResponse({
+          error: result.error,
+          details: result.details,
+        });
+      } else {
+        setResponse({ data: result.data });
       }
-
-      const json = (await res.json().catch(() => ({}))) as unknown;
-
-      if (typeof json !== "object" || json === null) {
-        throw new Error("Invalid response format");
-      }
-
-      // ✅ The API returns the patient history directly — not wrapped in { data: ... }
-      const parsed = json as PatientHistory;
-      setResponse({ data: parsed });
     } catch (err: unknown) {
       const error = err as Error;
-      setResponse({ error: error.message });
+      setResponse({
+        error: error.message,
+        details: "Client-side execution error",
+      });
     } finally {
       setLoading(false);
     }
@@ -127,6 +128,11 @@ export default function HistoryPage() {
             <div className="rounded-md border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm">
               <h3 className="mb-1 font-medium">Error:</h3>
               <p>{response.error}</p>
+              {response.details && (
+                <pre className="mt-2 rounded-md bg-red-100 p-2 text-xs whitespace-pre-wrap text-red-700">
+                  Details: {response.details}
+                </pre>
+              )}
             </div>
           )}
 
@@ -140,7 +146,7 @@ export default function HistoryPage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                Report Template                             */
+/*                                Report Template                             */
 /* -------------------------------------------------------------------------- */
 
 interface ReportTemplateProps {
