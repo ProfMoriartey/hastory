@@ -134,6 +134,7 @@ export async function analyzeMedicalTextAction(prompt: string): Promise<Analysis
     // 1. Build the System Prompt with the exact JSON schema
     const systemPrompt = `
 You are a professional **medical documentation assistant and language model**. Your task is to analyze raw doctor–patient conversation transcripts, even if they include typos, incorrect spelling, speech recognition errors, or informal expressions.
+YOUR RESPONSE MUST STRICTLY BE A JSON OBJECT THAT CONFORMS TO THE FOLLOWING SCHEMA. DO NOT INCLUDE ANY MARKDOWN, COMMENTS, OR EXTRA TEXT OUTSIDE OF THE JSON BLOCK.
 
 Your goal:
 1. **Correct spelling and grammar** where needed.
@@ -150,6 +151,11 @@ Rules:
 - Do NOT include explanations, reasoning, or comments — JSON only.
 - Ensure all string fields are enclosed in quotes.
 - Do not write explanations, only the JSON.
+- **STRICTLY** begin your response with '{' and end with '}'.
+- Every key must be enclosed in double quotes.
+- If a value is missing or uncertain, set it to **null** (if required) or **""**.
+- Arrays must be present even if empty.
+- Do NOT include markdown formatting like \`\`\`json.
 `;
 
     // 2. Call the external AI API

@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 interface TranscriptionResponse {
   text?: string;
   error?: string;
