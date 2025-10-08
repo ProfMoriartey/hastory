@@ -3,10 +3,14 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
+// 🎯 Import the Server Action from the new file
+import { transcribeAudioAction } from "./actions";
 
 export default function TranscribePage() {
   const [recording, setRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // 🎯 Store the Blob directly, ready for the Server Action
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [transcription, setTranscription] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -18,49 +22,93 @@ export default function TranscribePage() {
   const handleStartRecording = async () => {
     setTranscription("");
     setCopied(false);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: "audio/ogg; codecs=opus",
-    });
-    mediaRecorderRef.current = mediaRecorder;
-    audioChunks.current = [];
+    setAudioUrl(null); // Clear previous URL
+    setAudioBlob(null); // Clear previous Blob
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) audioChunks.current.push(event.data);
-    };
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert("Your browser does not support audio recording.");
+        return;
+      }
 
-    mediaRecorder.onstop = () => {
-      const audioBlob = new Blob(audioChunks.current, { type: "audio/ogg" });
-      const url = URL.createObjectURL(audioBlob);
-      setAudioUrl(url);
-    };
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    mediaRecorder.start();
-    setRecording(true);
+      // Choose the best supported audio type dynamically
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm" // OpenAI supports 'webm'
+        : MediaRecorder.isTypeSupported("audio/ogg")
+          ? "audio/ogg" // OpenAI supports 'ogg'
+          : MediaRecorder.isTypeSupported("audio/wav")
+            ? "audio/wav" // OpenAI supports 'wav'
+            : ""; // Let the browser choose its best default if none of the above
+
+      if (!mimeType) {
+        // If we can't determine a type, use the default and hope for the best
+        console.warn(
+          "Could not determine supported mimeType. Falling back to default.",
+        );
+      }
+
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current = null;
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunks.current = [];
+
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) audioChunks.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const finalBlob = new Blob(audioChunks.current, { type: mimeType });
+        const url = URL.createObjectURL(finalBlob);
+        setAudioUrl(url);
+        setAudioBlob(finalBlob); // 🎯 Save the Blob for the action
+        console.log("✅ Recording saved:", url);
+      };
+
+      mediaRecorder.start();
+      setRecording(true);
+      console.log("🎙️ Recording started with type:", mimeType);
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      alert("Microphone access denied or not supported on this browser.");
+    }
   };
 
   const handleStopRecording = () => {
-    mediaRecorderRef.current?.stop();
-    mediaRecorderRef.current = null;
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      // MediaRecorder.onstop handles setting state/ref
+      mediaRecorderRef.current = null;
+    }
     setRecording(false);
+    console.log("🛑 Recording stopped");
   };
 
+  // 🎯 Revised: Use Server Action instead of client-side fetch
   const handleSendAudio = async () => {
-    if (!audioUrl) return;
+    if (!audioBlob) return; // Use the stored Blob
     setLoading(true);
     setTranscription("");
 
-    const response = await fetch(audioUrl);
-    const blob = await response.blob();
+    // 1. Create FormData from the Blob
     const formData = new FormData();
-    formData.append("audio", blob, "recording.ogg");
 
-    const res = await fetch("/api/transcribe", {
-      method: "POST",
-      body: formData,
-    });
+    // Append the Blob as 'audio' with its original type/name
+    formData.append(
+      "audio",
+      audioBlob,
+      `recording.${audioBlob.type.split("/")[1] ?? "webm"}`,
+    );
 
-    const data = (await res.json()) as { text?: string; error?: string };
+    // 2. Call the Server Action
+    const data = await transcribeAudioAction(formData);
+
+    // 3. Handle the response (text or error)
     setTranscription(data.text ?? data.error ?? "No transcription available.");
     setLoading(false);
   };
@@ -117,7 +165,7 @@ export default function TranscribePage() {
 
             <Button
               onClick={handleSendAudio}
-              disabled={!audioUrl || loading}
+              disabled={!audioBlob || loading} // Use audioBlob check
               className="w-full sm:w-auto"
             >
               {loading ? "Processing..." : "Transcribe"}
