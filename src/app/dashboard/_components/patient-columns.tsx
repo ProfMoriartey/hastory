@@ -1,10 +1,8 @@
-// src/app/dashboard/_components/patient-columns.tsx
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Patient } from "~/server/db/schema";
-import { Button } from "~/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import PatientActions from "./patient-actions"; // ✅ Import the new component
 
 // Define the columns for the Shadcn Data Table
 export const columns: ColumnDef<Patient>[] = [
@@ -18,10 +16,12 @@ export const columns: ColumnDef<Patient>[] = [
   {
     accessorKey: "dateOfBirth",
     header: "D.O.B",
+    cell: ({ row }) => row.original.dateOfBirth ?? "N/A",
   },
   {
     accessorKey: "gender",
     header: "Gender",
+    cell: ({ row }) => row.original.gender ?? "N/A",
   },
   {
     accessorKey: "createdAt",
@@ -30,13 +30,9 @@ export const columns: ColumnDef<Patient>[] = [
   },
   {
     id: "actions",
-    cell: ({ row }) => (
-      <Button variant="link" asChild>
-        {/* 🎯 This link navigates to the patient-specific session view */}
-        <a href={`/patient/${row.original.id}`}>
-          View Sessions <ArrowRight className="ml-1 h-4 w-4" />
-        </a>
-      </Button>
-    ),
+    cell: ({ row }) => {
+      // ✅ Now rendering the Client Component, passing required data as props
+      return <PatientActions patient={row.original} />;
+    },
   },
 ];
