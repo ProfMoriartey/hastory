@@ -22,8 +22,7 @@ export default async function SessionDetailPage({
   params,
 }: SessionDetailPageProps) {
   const { userId } = await auth();
-  const { patientId: rawPatientId } = await params;
-  const { patientId: rawSessionId } = await params;
+  const { patientId: rawPatientId, sessionId: rawSessionId } = await params;
 
   const patientId = parseInt(rawPatientId);
   const sessionId = parseInt(rawSessionId);
