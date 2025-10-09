@@ -6,6 +6,7 @@ import CreatePatientForm from "./_components/create-patient-form";
 import { Button } from "~/components/ui/button";
 import { UserButton } from "@clerk/nextjs";
 import PatientMobileList from "./_components/patient-mobile-list"; // 🎯 Import Mobile List
+import PatientList from "./_components/patient-list";
 
 // This component is a Server Component. It fetches data directly.
 export default async function DashboardPage() {
@@ -58,9 +59,9 @@ export default async function DashboardPage() {
         )}
 
         {/* 🎯 DESKTOP VIEW: Data Table (Hidden on small screens) */}
-        <div className="hidden sm:block">
+        <div className="">
           {patients.length > 0 ? (
-            <DataTable data={patients} columns={columns} />
+            <PatientList patients={patients} />
           ) : (
             <div className="rounded-lg border border-gray-200 bg-white py-12 text-center shadow-sm">
               <p className="text-gray-500">No patients recorded yet.</p>
@@ -72,7 +73,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* 🎯 MOBILE VIEW: Card List (Hidden on tablet/desktop) */}
-        <div className="sm:hidden">
+        <div className="hidden">
           {patients.length > 0 ? (
             <PatientMobileList patients={patients} />
           ) : (

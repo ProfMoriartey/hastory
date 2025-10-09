@@ -117,16 +117,14 @@ export default function PatientProfileClient({
       <nav className="fixed top-0 z-10 w-full border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Button variant="secondary" onClick={() => router.push("/dashboard")}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+            <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-xl font-bold text-gray-800">
-            {patient.name}&apos;s Profile
-          </h1>
+          <h1 className="text-lg font-bold text-gray-800">{patient.name}</h1>
           <Button
             onClick={() => router.push(`/patient/${patient.id}/new-session`)}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            <PlusCircle className="mr-2 h-4 w-4" /> Start New Session
+            <PlusCircle className="h-4 w-4" />
           </Button>
         </div>
       </nav>
@@ -157,7 +155,7 @@ export default function PatientProfileClient({
         <Tabs defaultValue="summary" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="summary">
-              <ListChecks className="mr-2 h-4 w-4" /> Longitudinal Summary
+              <ListChecks className="mr-2 h-4 w-4" /> Summary
             </TabsTrigger>
             <TabsTrigger value="sessions">
               <FileText className="mr-2 h-4 w-4" /> Recent Sessions (
