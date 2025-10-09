@@ -4,13 +4,16 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
+import { Mic, MicOff, Send, FileDown, Loader2 } from "lucide-react";
 import type { PatientHistory } from "~/lib/patientHistorySchema";
 
-// Assuming analyzeMedicalTextAction is accessible here (e.g., "~/actions/history").
-// You must adjust this path if your actions file is located elsewhere.
-import { analyzeMedicalTextAction } from "~/app/history/actions";
+// 🎯 Import both Server Actions
+import { analyzeMedicalTextAction } from "~/actions/analyze";
+import { transcribeAudioAction } from "~/actions/transcribe"; // Assuming this path
 
 import ReportTemplate from "~/app/history/_components/ReportTemplate";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 interface NewSessionClientProps {
   patientId: number;
@@ -29,31 +32,130 @@ export default function NewSessionClient({
   patientName,
   initialPrompt,
 }: NewSessionClientProps) {
+  // State for Analysis Flow
   const [prompt, setPrompt] = useState(initialPrompt);
   const [response, setResponse] = useState<AnalysisResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // State for Transcription Flow
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+
   const reportRef = useRef<HTMLDivElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunks = useRef<Blob[]>([]);
   const router = useRouter();
+
+  // --- TRANSCRIPTION HANDLERS ---
+
+  const handleStartRecording = async () => {
+    setAudioUrl(null);
+    setAudioBlob(null);
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert("Your browser does not support audio recording.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Choose the best supported audio type dynamically for Whisper API compatibility
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/ogg")
+          ? "audio/ogg"
+          : MediaRecorder.isTypeSupported("audio/wav")
+            ? "audio/wav"
+            : "";
+
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current = null;
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunks.current = [];
+
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) audioChunks.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const finalBlob = new Blob(audioChunks.current, { type: mimeType });
+        const url = URL.createObjectURL(finalBlob);
+        setAudioUrl(url);
+        setAudioBlob(finalBlob); // Save the Blob for the Server Action
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      console.log("🎙️ Recording started with type:", mimeType);
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      alert("Microphone access denied or not supported on this browser.");
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    setIsRecording(false);
+    console.log("🛑 Recording stopped");
+  };
+
+  const handleTranscribe = async () => {
+    if (!audioBlob) return;
+    setIsTranscribing(true);
+    setResponse(null); // Clear analysis response
+
+    const formData = new FormData();
+
+    // Append the Blob as 'audio' with its original type/name
+    formData.append(
+      "audio",
+      audioBlob,
+      `recording.${audioBlob.type.split("/")[1] ?? "webm"}`,
+    );
+
+    // Call the Transcription Server Action
+    const result = await transcribeAudioAction(formData);
+
+    if (result.error) {
+      setResponse({ error: "Transcription failed.", details: result.error });
+      setPrompt(""); // Clear prompt on transcription failure
+    } else if (result.text) {
+      // 🎯 Success: Use transcription result to populate the main prompt Textarea
+      setPrompt(result.text);
+    }
+
+    setIsTranscribing(false);
+  };
+
+  // --- ANALYSIS HANDLER ---
 
   const handleAnalyze = async (): Promise<void> => {
     if (!prompt.trim()) return;
-    setLoading(true);
+    setIsAnalyzing(true);
     setResponse(null);
 
     try {
-      // 🎯 Call the Server Action with the prompt AND the required patientId
+      // Call the Server Action with the prompt and the required patientId
       const result = await analyzeMedicalTextAction(prompt, patientId);
 
-      if (result.error) {
+      if ("error" in result) {
         setResponse({
           error: result.error,
           details: result.details,
         });
       } else {
-        // Data is successfully saved to Drizzle ORM 'sessions' table here.
         setResponse({ data: result.data });
-
-        // 🎯 Redirect to the patient's full session history view upon successful save.
+        // Redirect to the session history list after successful save
         router.push(`/patient/${patientId}/sessions`);
       }
     } catch (err: unknown) {
@@ -63,23 +165,52 @@ export default function NewSessionClient({
         details: "Client-side execution error",
       });
     } finally {
-      setLoading(false);
+      setIsAnalyzing(false);
     }
   };
 
+  // --- PDF HANDLER (Re-integrated) ---
+  const handleDownloadPDF = async () => {
+    if (!reportRef.current) return;
+    const element = reportRef.current;
+
+    element.classList.add("pdf-rendering"); // Temporary class for rendering cleanup
+
+    const canvas = await html2canvas(element, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+
+    element.classList.remove("pdf-rendering");
+
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`Patient_Report_${patientName}_${patientId}.pdf`);
+  };
+
+  // --- RENDER ---
+  const isLoading = isAnalyzing || isTranscribing;
+
   return (
     <main className="flex min-h-screen flex-col bg-gray-50 pt-16">
+      {/* Header/Navigation */}
       <nav className="fixed top-0 z-10 w-full border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-3 sm:gap-4">
-          <Button
-            variant="secondary"
-            onClick={() => router.push(`/patient/${patientId}/sessions`)}
-          >
-            🔙 Cancel & View History
+          <Button variant="secondary" onClick={() => router.push("/dashboard")}>
+            🔙 Dashboard
           </Button>
           <h1 className="hidden text-lg font-semibold text-gray-800 sm:block">
             {patientName}: New Session
           </h1>
+          {response?.data && (
+            <Button
+              onClick={handleDownloadPDF}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <FileDown className="mr-2 h-4 w-4" /> Download PDF
+            </Button>
+          )}
         </div>
       </nav>
 
@@ -89,37 +220,97 @@ export default function NewSessionClient({
             Analyze Conversation for {patientName}
           </h2>
 
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Paste or type a doctor–patient conversation..."
-            className="mb-4 h-40 w-full resize-none"
-          />
+          {/* Input Area */}
+          <div className="relative mb-4">
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Paste or type conversation transcript, or record audio below..."
+              className="h-40 w-full resize-none pr-10"
+              disabled={isLoading}
+            />
+            {isTranscribing && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 backdrop-blur-sm">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                <span className="ml-2 text-blue-600">Transcribing...</span>
+              </div>
+            )}
+          </div>
 
+          {/* Audio Player */}
+          {audioUrl && (
+            <div className="mb-4 flex w-full items-center justify-center gap-4">
+              <audio
+                controls
+                src={audioUrl}
+                className="w-full rounded-md border border-gray-200"
+              >
+                Your browser does not support audio playback.
+              </audio>
+            </div>
+          )}
+
+          {/* Controls */}
           <div className="mb-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
+            {/* Recording Buttons */}
+            <div className="flex w-full gap-3 sm:w-auto">
+              {!isRecording ? (
+                <Button
+                  onClick={handleStartRecording}
+                  disabled={isLoading}
+                  variant="outline"
+                  className="w-1/2 border-red-300 text-red-600 hover:bg-red-50 sm:w-auto"
+                >
+                  <Mic className="mr-2 h-4 w-4" /> Start Recording
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleStopRecording}
+                  variant="destructive"
+                  className="w-1/2 animate-pulse sm:w-auto"
+                >
+                  <MicOff className="mr-2 h-4 w-4" /> Stop Recording
+                </Button>
+              )}
+
+              <Button
+                onClick={handleTranscribe}
+                disabled={!audioBlob || isLoading || !audioUrl}
+                variant="secondary"
+                className="w-1/2 sm:w-auto"
+              >
+                <Send className="mr-2 h-4 w-4" /> Transcribe
+              </Button>
+            </div>
+
+            {/* Analyze Button */}
             <Button
               onClick={handleAnalyze}
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 sm:w-48"
+              disabled={!prompt.trim() || isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 sm:w-40"
             >
-              {loading ? "Analyzing & Saving..." : "Analyze & Save Session"}
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...
+                </>
+              ) : (
+                "Analyze & Save"
+              )}
             </Button>
           </div>
 
+          {/* Error/Report Output */}
           {response?.error && (
             <div className="rounded-md border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm">
-              <h3 className="mb-1 font-medium">Error:</h3>
-              <p>{response.error}</p>
+              <h3 className="mb-1 font-medium">Error: {response.error}</h3>
               {response.details && (
-                <p className="mt-2 text-sm">
-                  Details: {response.details.substring(0, 150)}
+                <p className="mt-1 text-sm">
+                  Details: {response.details.substring(0, 100)}...
                 </p>
               )}
             </div>
           )}
 
-          {/* Report template is now hidden on success since the user is redirected */}
-          {/* Leaving this here for initial testing purposes, but it can be removed */}
           {response?.data && (
             <ReportTemplate ref={reportRef} data={response.data} />
           )}
