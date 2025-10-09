@@ -6,6 +6,13 @@ import {
   type PatientHistory,
 } from "~/lib/patientHistorySchema";
 import { cleanTranscriptionText } from "~/lib/cleanText";
+import { db } from "~/server/db/index"; 
+import { sessions, patients } from "~/server/db/schema";
+import { auth } from "@clerk/nextjs/server";
+import { revalidatePath } from "next/cache";
+import { eq, and } from "drizzle-orm";
+
+
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -123,12 +130,29 @@ function normalizePatientHistory(data: unknown): unknown {
  * @param prompt The doctor-patient conversation text.
  * @returns Structured PatientHistory data or an error.
  */
-export async function analyzeMedicalTextAction(prompt: string): Promise<AnalysisResponse> {
+export async function analyzeMedicalTextAction(prompt: string, patientId: number): Promise<AnalysisResponse> {
   if (!prompt.trim()) {
     return { error: "Missing prompt" };
   }
 
+const { userId } = await auth();
+  if (!userId) {
+    return { error: "Authentication required." };
+  }
+
   try {
+    // 1. SECURITY CHECK: Verify the user owns this patient ID
+    const patientRecord = await db.query.patients.findFirst({
+      where: and(
+        eq(patients.id, patientId),
+        eq(patients.userId, userId)
+      ),
+    });
+
+    if (!patientRecord) {
+      return { error: "Authorization failed: Patient not found or access denied." };
+    }
+
     const cleanedPrompt = cleanTranscriptionText(prompt);
 
     // 1. Build the System Prompt with the exact JSON schema
@@ -228,12 +252,37 @@ Rules:
     }
 
     // 5. Final normalization and return
-    const finalData = validation.data;
+       const finalData = validation.data;
     
+    // 🎯 Drizzle Insert Call: Returns an array of inserted records
+    const insertedSessions = await db.insert(sessions).values({
+      patientId: patientId,
+      transcript: prompt,
+      structuredData: finalData,
+    }).returning({ id: sessions.id });
+
+    // ✅ FIX: Check the array result for a valid record
+    const newSession = insertedSessions[0]; 
+
+    if (!newSession) {
+        // Handle the database failure if no session record was returned
+        console.error("Drizzle insert failed: Returned empty result.");
+        return { error: "Failed to secure session ID.", details: "Database insert returned empty result." };
+    }
+    
+    // The code is now safe because we confirmed newSession exists
+    console.log(`✅ Session successfully saved. New Session ID: ${newSession.id}`);
+
+    // 6. Revalidate the list page
+    revalidatePath(`/patient/${patientId}/sessions`); 
+
+    // Return the structured data to the client
     return { data: finalData };
+
   } catch (err: unknown) {
     const error = err as Error;
     console.error("Server action error:", error);
     return { error: "Action failed", details: error.message };
   }
 }
+

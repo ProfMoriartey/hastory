@@ -4,64 +4,57 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import type { PatientHistory } from "~/lib/patientHistorySchema";
 
-// 🎯 Import the new Server Action
-import { analyzeMedicalTextAction } from "./actions";
-import ReportTemplate from "./_components/ReportTemplate";
+// Assuming analyzeMedicalTextAction is accessible here (e.g., "~/actions/history").
+// You must adjust this path if your actions file is located elsewhere.
+import { analyzeMedicalTextAction } from "~/app/history/actions";
 
-// Match the Server Action's return type
+import ReportTemplate from "~/app/history/_components/ReportTemplate";
+
+interface NewSessionClientProps {
+  patientId: number;
+  patientName: string;
+  initialPrompt: string;
+}
+
 interface AnalysisResponse {
   data?: PatientHistory;
   error?: string;
   details?: string;
 }
 
-export default function HistoryPage() {
-  const [prompt, setPrompt] = useState("");
+export default function NewSessionClient({
+  patientId,
+  patientName,
+  initialPrompt,
+}: NewSessionClientProps) {
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [response, setResponse] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // ✅ FIX: Initialize useRef with null, specifying the HTMLDivElement type
   const reportRef = useRef<HTMLDivElement | null>(null);
-
   const router = useRouter();
 
-  // ✅ PDF Export Handler (Unchanged)
-  const handleDownloadPDF = async () => {
-    if (!reportRef.current) return;
-    const element = reportRef.current;
-    const canvas = await html2canvas(element, { scale: 2 });
-    const imgData = canvas.toDataURL("image/png");
-
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save("Patient_History_Report.pdf");
-  };
-
-  // 🎯 Revised: Use Server Action instead of client-side fetch
   const handleAnalyze = async (): Promise<void> => {
     if (!prompt.trim()) return;
     setLoading(true);
     setResponse(null);
 
     try {
-      // 1. Call the Server Action directly
-      const result = await analyzeMedicalTextAction(prompt);
+      // 🎯 Call the Server Action with the prompt AND the required patientId
+      const result = await analyzeMedicalTextAction(prompt, patientId);
 
-      // 2. Handle the structured result (data or error)
       if (result.error) {
         setResponse({
           error: result.error,
           details: result.details,
         });
       } else {
+        // Data is successfully saved to Drizzle ORM 'sessions' table here.
         setResponse({ data: result.data });
+
+        // 🎯 Redirect to the patient's full session history view upon successful save.
+        router.push(`/patient/${patientId}/sessions`);
       }
     } catch (err: unknown) {
       const error = err as Error;
@@ -75,37 +68,25 @@ export default function HistoryPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col bg-gray-50">
-      {/* ✅ Top Navigation */}
-      <nav className="sticky top-0 z-10 w-full border-b border-gray-200 bg-white shadow-sm">
+    <main className="flex min-h-screen flex-col bg-gray-50 pt-16">
+      <nav className="fixed top-0 z-10 w-full border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-3 sm:gap-4">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => router.push("/")}>
-              🔙 Back
-            </Button>
-            <Button onClick={() => router.push("/transcribe")}>
-              🎙️ Transcribe
-            </Button>
-            {response?.data && (
-              <Button
-                onClick={handleDownloadPDF}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                📄 Download PDF
-              </Button>
-            )}
-          </div>
+          <Button
+            variant="secondary"
+            onClick={() => router.push(`/patient/${patientId}/sessions`)}
+          >
+            🔙 Cancel & View History
+          </Button>
           <h1 className="hidden text-lg font-semibold text-gray-800 sm:block">
-            🩺 Medical Analyzer
+            {patientName}: New Session
           </h1>
         </div>
       </nav>
 
-      {/* ✅ Main Content */}
       <div className="flex flex-grow flex-col items-center justify-start px-4 py-8">
         <div className="w-full max-w-3xl">
           <h2 className="mb-4 text-center text-2xl font-semibold text-gray-800 sm:text-left">
-            Analyze Doctor–Patient Conversation
+            Analyze Conversation for {patientName}
           </h2>
 
           <Textarea
@@ -119,9 +100,9 @@ export default function HistoryPage() {
             <Button
               onClick={handleAnalyze}
               disabled={loading}
-              className="w-full sm:w-40"
+              className="w-full bg-blue-600 hover:bg-blue-700 sm:w-48"
             >
-              {loading ? "Analyzing..." : "Analyze"}
+              {loading ? "Analyzing & Saving..." : "Analyze & Save Session"}
             </Button>
           </div>
 
@@ -130,13 +111,15 @@ export default function HistoryPage() {
               <h3 className="mb-1 font-medium">Error:</h3>
               <p>{response.error}</p>
               {response.details && (
-                <pre className="mt-2 rounded-md bg-red-100 p-2 text-xs whitespace-pre-wrap text-red-700">
-                  Details: {response.details}
-                </pre>
+                <p className="mt-2 text-sm">
+                  Details: {response.details.substring(0, 150)}
+                </p>
               )}
             </div>
           )}
 
+          {/* Report template is now hidden on success since the user is redirected */}
+          {/* Leaving this here for initial testing purposes, but it can be removed */}
           {response?.data && (
             <ReportTemplate ref={reportRef} data={response.data} />
           )}
