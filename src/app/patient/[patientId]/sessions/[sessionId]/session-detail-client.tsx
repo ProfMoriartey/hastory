@@ -1,15 +1,28 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
-import { ArrowLeft, FileDown } from "lucide-react";
+import { ArrowLeft, FileDown, Trash2, Loader2 } from "lucide-react";
 import type { Patient, Session } from "~/server/db/schema";
 // Assuming ReportTemplate is located here (adjust path if needed)
 import ReportTemplate from "~/app/history/_components/ReportTemplate";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "~/components/ui/alert-dialog";
+
+import { deleteSessionAction } from "~/actions/session-actions";
 
 interface SessionDetailClientProps {
   session: Session;
@@ -22,6 +35,24 @@ export default function SessionDetailClient({
 }: SessionDetailClientProps) {
   const router = useRouter();
   const reportRef = useRef<HTMLDivElement | null>(null);
+
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+
+    // Call the Server Action
+    const result = await deleteSessionAction(patient.id, session.id);
+
+    if (result.success) {
+      // Navigate back to the session history list on success
+      router.push(`/patient/${patient.id}/sessions`);
+    } else {
+      // Handle the error (e.g., show a toast or alert)
+      alert(`Deletion Failed: ${result.error}`);
+      setIsDeleting(false);
+    }
+  };
 
   // Function to derive a quick title for the report based on its content
   const getTitle = () => {
@@ -71,6 +102,42 @@ export default function SessionDetailClient({
           >
             <FileDown className="mr-2 h-4 w-4" /> Download PDF
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={isDeleting}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete Session
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the
+                  session record from the database.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDelete}
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                      Deleting...
+                    </>
+                  ) : (
+                    "Confirm Deletion"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </nav>
 
