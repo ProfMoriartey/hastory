@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Hastory',
     short_name: 'Hastory',
     description: 'Your smart medical documentation assistant.',
-    start_url: '/',
+    start_url: '/dashboard',
     display: 'standalone', // Makes it feel like a native app (removes browser UI)
     background_color: '#ffffff',
     theme_color: '#000000',

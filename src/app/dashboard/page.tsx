@@ -3,15 +3,20 @@ import type { Patient } from "~/server/db/schema";
 import { DataTable } from "~/components/ui/data-table";
 import { columns } from "./_components/patient-columns";
 import CreatePatientForm from "./_components/create-patient-form";
+import { auth } from "@clerk/nextjs/server";
 import { Button } from "~/components/ui/button";
-import { UserButton } from "@clerk/nextjs";
+import { SignInButton, UserButton } from "@clerk/nextjs";
 import PatientMobileList from "./_components/patient-mobile-list"; // 🎯 Import Mobile List
 import PatientList from "./_components/patient-list";
+import { LogIn } from "lucide-react";
 
 // This component is a Server Component. It fetches data directly.
 export default async function DashboardPage() {
   let patients: Patient[] = [];
   let error: string | null = null;
+
+  const { userId } = await auth();
+  const isAuthenticated = !userId;
 
   try {
     // 1. Fetch data on the server
@@ -23,9 +28,22 @@ export default async function DashboardPage() {
 
   // --- Layout Constants ---
   const headerContent = (
-    <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-      <h1 className="text-xl font-bold text-gray-800">🩺 Dashboard</h1>
-      <UserButton afterSignOutUrl="/" />
+    <div>
+      {isAuthenticated ? (
+        // Logged In State
+        <SignInButton mode="modal">
+          <Button>
+            <LogIn className="mr-2 h-4 w-4" />
+            Sign In
+          </Button>
+        </SignInButton>
+      ) : (
+        // Logged Out State
+        <div className="mx-auto mb-1 flex max-w-5xl items-center justify-between px-4 py-3 md:mb-0">
+          <h1 className="text-xl font-bold text-gray-800">🩺 Dashboard</h1>
+          <UserButton />
+        </div>
+      )}
     </div>
   );
 
