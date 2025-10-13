@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Your App Name',
-    short_name: 'YourApp',
-    description: 'A brief description of your web application.',
+    name: 'Hastory',
+    short_name: 'Hastory',
+    description: 'Your smart medical documentation assistant.',
     start_url: '/',
     display: 'standalone', // Makes it feel like a native app (removes browser UI)
     background_color: '#ffffff',

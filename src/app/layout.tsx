@@ -13,7 +13,7 @@ import {
 
 export const metadata: Metadata = {
   title: "Hastory",
-  description: "Your medical documentation smart assistant",
+  description: "Your smart medical documentation assistant.",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
