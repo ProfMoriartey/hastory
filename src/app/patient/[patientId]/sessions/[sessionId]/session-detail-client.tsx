@@ -96,12 +96,12 @@ export default function SessionDetailClient({
           <h1 className="hidden text-lg font-semibold text-gray-800 sm:block">
             {getTitle()}
           </h1>
-          <Button
+          {/* <Button
             onClick={handleDownloadPDF}
             className="bg-green-600 hover:bg-green-700"
           >
             <FileDown className="mr-2 h-4 w-4" /> Download PDF
-          </Button>
+          </Button> */}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" disabled={isDeleting}>

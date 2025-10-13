@@ -10,7 +10,7 @@ import {
   CardDescription,
 } from "~/components/ui/card";
 import type { Session } from "~/server/db/schema";
-import { ArrowLeft, PlusCircle, FileText } from "lucide-react";
+import { ArrowLeft, PlusCircle, FileText, User } from "lucide-react";
 
 interface SessionHistoryListProps {
   patientId: number;
@@ -40,13 +40,21 @@ export default function SessionHistoryList({
       <nav className="fixed top-0 z-10 w-full border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Button variant="secondary" onClick={() => router.push("/dashboard")}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
+            <ArrowLeft className="mr-2 hidden h-4 w-4 md:block" /> Dashboard
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => router.push(`/patient/${patientId}`)}
+          >
+            <User className="mr-2 hidden h-5 w-5 text-blue-600 md:block" />
+            Profile
+          </Button>
+
           <Button
             onClick={() => router.push(`/patient/${patientId}/new-session`)}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            <PlusCircle className="mr-2 h-4 w-4" /> New Session
+            <PlusCircle className="mr-2 hidden h-4 w-4 md:block" /> New Session
           </Button>
         </div>
       </nav>

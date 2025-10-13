@@ -169,6 +169,8 @@ ${PATIENT_HISTORY_SCHEMA_STRING}
 
 Rules:
 - Always return a valid JSON object (no markdown, no commentary).
+- Always provide an (assessment summary), a (chronologicalNarrative) and a (plan) in the returned JSON.
+- Return the Json with the same Language that was used. 
 - If any value is missing or uncertain, set it to null.
 - Use concise, formal clinical language (e.g., "shortness of breath" instead of "hard to breathe").
 - Arrays should be present even if empty.
@@ -192,7 +194,7 @@ Rules:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "qwen/qwen3-30b-a3b:free",
+          model: "deepseek/deepseek-r1-0528-qwen3-8b:free",
           messages: [
             { role: "system", content: systemPrompt },
             {
