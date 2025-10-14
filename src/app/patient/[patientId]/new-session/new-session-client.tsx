@@ -4,8 +4,10 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
-import { Mic, MicOff, Send, FileDown, Loader2 } from "lucide-react";
+import { Mic, MicOff, Send, FileDown, Loader2, User } from "lucide-react";
 import type { PatientHistory } from "~/lib/patientHistorySchema";
+import { UploadDropzone, uploadFiles } from "~/utils/uploadthing";
+import { AudioUploader } from "~/components/shared/AudioUploader";
 
 // 🎯 Import both Server Actions
 import { analyzeMedicalTextAction } from "~/actions/analyze";
@@ -42,6 +44,8 @@ export default function NewSessionClient({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false); // ✅ NEW: Track upload status
 
   const reportRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -49,10 +53,31 @@ export default function NewSessionClient({
   const router = useRouter();
 
   // --- TRANSCRIPTION HANDLERS ---
+  const handleUploadComplete = (res: { url: string }[]) => {
+    const uploadedFileUrl = res[0]?.url ?? null;
+
+    if (uploadedFileUrl) {
+      setAudioUrl(uploadedFileUrl);
+      setUploadFeedback(
+        "✅ Audio file saved to Uploadthing. Ready to transcribe.",
+      );
+    } else {
+      setUploadFeedback("❌ Upload failed to return a URL.");
+    }
+    setIsUploading(false);
+    setIsRecording(false); // Ensure recording state is reset
+  };
+
+  const handleUploadError = (error: Error) => {
+    setUploadFeedback(`❌ Upload error: ${error.message}`);
+    setIsUploading(false);
+    setIsRecording(false);
+    console.error("Uploadthing Error:", error);
+  };
 
   const handleStartRecording = async () => {
     setAudioUrl(null);
-    setAudioBlob(null);
+    setUploadFeedback(null);
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -62,20 +87,12 @@ export default function NewSessionClient({
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Choose the best supported audio type dynamically for Whisper API compatibility
+      // Choose the best supported audio type dynamically
       const mimeType = MediaRecorder.isTypeSupported("audio/webm")
         ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/ogg")
-          ? "audio/ogg"
-          : MediaRecorder.isTypeSupported("audio/wav")
-            ? "audio/wav"
-            : "";
+        : "audio/ogg";
 
-      if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.stop();
-        mediaRecorderRef.current = null;
-      }
-
+      mediaRecorderRef.current?.stop();
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunks.current = [];
@@ -84,16 +101,35 @@ export default function NewSessionClient({
         if (event.data.size > 0) audioChunks.current.push(event.data);
       };
 
-      mediaRecorder.onstop = () => {
+      // 🎯 NEW: On stop, trigger the Uploadthing transfer
+      mediaRecorder.onstop = async () => {
         const finalBlob = new Blob(audioChunks.current, { type: mimeType });
-        const url = URL.createObjectURL(finalBlob);
-        setAudioUrl(url);
-        setAudioBlob(finalBlob); // Save the Blob for the Server Action
+
+        // ✅ FIX: Convert the Blob to a File object, providing a temporary name
+        const audioFile = new File(
+          [finalBlob],
+          `recording_${Date.now()}.${mimeType.split("/")[1] ?? "webm"}`, // Provide a name
+          { type: mimeType },
+        );
+
+        setUploadFeedback("💾 Processing and uploading recorded audio...");
+
+        try {
+          // Pass the File object instead of the Blob
+          const res = await uploadFiles("patientAudio", { files: [audioFile] });
+
+          if (res && res.length > 0) {
+            handleUploadComplete(res as { url: string }[]);
+          } else {
+            handleUploadError(new Error("Uploadthing returned no file data."));
+          }
+        } catch (err) {
+          handleUploadError(err as Error);
+        }
       };
 
       mediaRecorder.start();
       setIsRecording(true);
-      console.log("🎙️ Recording started with type:", mimeType);
     } catch (err) {
       console.error("Microphone access error:", err);
       alert("Microphone access denied or not supported on this browser.");
@@ -107,34 +143,29 @@ export default function NewSessionClient({
     }
     setIsRecording(false);
     console.log("🛑 Recording stopped");
+    setIsUploading(true);
   };
 
+  // --- TRANSCRIBE HANDLER ---
+
   const handleTranscribe = async () => {
-    if (!audioBlob) return;
+    if (!audioUrl) return;
     setIsTranscribing(true);
     setResponse(null); // Clear analysis response
-
-    const formData = new FormData();
-
-    // Append the Blob as 'audio' with its original type/name
-    formData.append(
-      "audio",
-      audioBlob,
-      `recording.${audioBlob.type.split("/")[1] ?? "webm"}`,
-    );
+    setUploadFeedback("🎙️ Transcribing audio...");
 
     // Call the Transcription Server Action
-    const result = await transcribeAudioAction(formData);
+    const result = await transcribeAudioAction(audioUrl);
 
     if (result.error) {
       setResponse({ error: "Transcription failed.", details: result.error });
-      setPrompt(""); // Clear prompt on transcription failure
+      setPrompt("");
     } else if (result.text) {
-      // 🎯 Success: Use transcription result to populate the main prompt Textarea
       setPrompt(result.text);
     }
 
     setIsTranscribing(false);
+    setUploadFeedback(null);
   };
 
   // --- ANALYSIS HANDLER ---
@@ -190,7 +221,7 @@ export default function NewSessionClient({
   };
 
   // --- RENDER ---
-  const isLoading = isAnalyzing || isTranscribing;
+  const isLoading = isAnalyzing || isTranscribing || isUploading; // ✅ Include isUploading
 
   return (
     <main className="flex min-h-screen flex-col bg-gray-50 pt-16">
@@ -200,6 +231,14 @@ export default function NewSessionClient({
           <Button variant="secondary" onClick={() => router.push("/dashboard")}>
             🔙 Dashboard
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => router.push(`/patient/${patientId}`)}
+          >
+            <User className="mr-2 hidden h-5 w-5 text-blue-600 md:block" />
+            Profile
+          </Button>
+
           <h1 className="hidden text-lg font-semibold text-gray-800 sm:block">
             {patientName}: New Session
           </h1>
@@ -275,12 +314,36 @@ export default function NewSessionClient({
 
               <Button
                 onClick={handleTranscribe}
-                disabled={!audioBlob || isLoading || !audioUrl}
+                disabled={!audioUrl || isAnalyzing || isTranscribing}
                 variant="secondary"
                 className="w-1/2 sm:w-auto"
               >
-                <Send className="mr-2 h-4 w-4" /> Transcribe
+                {isTranscribing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                    Transcribing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" /> Transcribe
+                  </>
+                )}
               </Button>
+            </div>
+
+            <div className="mb-8 border-t pt-4">
+              {/* Use the imported UploadDropzone or your custom component */}
+              <AudioUploader
+                onClientUploadComplete={handleUploadComplete}
+                onUploadError={handleUploadError}
+              />
+              {uploadFeedback && (
+                <p
+                  className={`mt-2 text-sm ${uploadFeedback.startsWith("❌") ? "text-red-500" : "text-green-600"}`}
+                >
+                  {uploadFeedback}
+                </p>
+              )}
             </div>
 
             {/* Analyze Button */}

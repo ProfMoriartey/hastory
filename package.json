@@ -31,6 +31,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@t3-oss/env-nextjs": "^0.12.0",
     "@tanstack/react-table": "^8.21.3",
+    "@uploadthing/react": "^7.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.41.0",
@@ -44,6 +45,7 @@
     "react-hot-toast": "^2.6.0",
     "svix": "^1.76.1",
     "tailwind-merge": "^3.3.1",
+    "uploadthing": "^7.7.4",
     "zod": "^3.24.2"
   },
   "devDependencies": {
