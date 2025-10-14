@@ -28,7 +28,7 @@ export default async function LandingPage() {
             href="/"
             className="flex items-center space-x-2 text-xl font-bold text-blue-700"
           >
-            🩺 MedDoc AI
+            🩺 Hastory
           </Link>
 
           {/* 🎯 Dynamic Auth Controls */}
