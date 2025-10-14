@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { db } from "~/server/db/index";
-import { sessions, patients } from "~/server/db/schema";
+import { sessions } from "~/server/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, asc, and } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import SessionHistoryList from "./session-history-list"; // Client component for presentation
 
 interface SessionsPageProps {

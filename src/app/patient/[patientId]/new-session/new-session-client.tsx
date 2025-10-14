@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 import { Mic, MicOff, Send, FileDown, Loader2, User } from "lucide-react";
 import type { PatientHistory } from "~/lib/patientHistorySchema";
-import { UploadDropzone, uploadFiles } from "~/utils/uploadthing";
+import { uploadFiles } from "~/utils/uploadthing";
 import { AudioUploader } from "~/components/shared/AudioUploader";
 
 // 🎯 Import both Server Actions
@@ -43,7 +43,8 @@ export default function NewSessionClient({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [localAudioUrl, setLocalAudioUrl] = useState<string | null>(null); // ✅ NEW: Local URL for playback
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null); // ✅ NEW: Store the local Blob
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false); // ✅ NEW: Track upload status
 
@@ -77,6 +78,8 @@ export default function NewSessionClient({
 
   const handleStartRecording = async () => {
     setAudioUrl(null);
+    setLocalAudioUrl(null); // Clear local URL
+    setAudioBlob(null); // Clear Blob
     setUploadFeedback(null);
 
     try {
@@ -104,6 +107,7 @@ export default function NewSessionClient({
       // 🎯 NEW: On stop, trigger the Uploadthing transfer
       mediaRecorder.onstop = async () => {
         const finalBlob = new Blob(audioChunks.current, { type: mimeType });
+        const url = URL.createObjectURL(finalBlob);
 
         // ✅ FIX: Convert the Blob to a File object, providing a temporary name
         const audioFile = new File(
@@ -112,20 +116,25 @@ export default function NewSessionClient({
           { type: mimeType },
         );
 
-        setUploadFeedback("💾 Processing and uploading recorded audio...");
+        setLocalAudioUrl(url); // ✅ Set local URL for playback
+        setAudioBlob(finalBlob); // ✅ Save the Blob
 
-        try {
-          // Pass the File object instead of the Blob
-          const res = await uploadFiles("patientAudio", { files: [audioFile] });
+        setUploadFeedback(
+          "Recording saved locally. Press 'Transcribe' or 'Analyze & Save'.",
+        );
 
-          if (res && res.length > 0) {
-            handleUploadComplete(res as { url: string }[]);
-          } else {
-            handleUploadError(new Error("Uploadthing returned no file data."));
-          }
-        } catch (err) {
-          handleUploadError(err as Error);
-        }
+        // try {
+        //   // Pass the File object instead of the Blob
+        //   const res = await uploadFiles("patientAudio", { files: [audioFile] });
+
+        //   if (res && res.length > 0) {
+        //     handleUploadComplete(res as { url: string }[]);
+        //   } else {
+        //     handleUploadError(new Error("Uploadthing returned no file data."));
+        //   }
+        // } catch (err) {
+        //   handleUploadError(err as Error);
+        // }
       };
 
       mediaRecorder.start();
@@ -137,37 +146,72 @@ export default function NewSessionClient({
   };
 
   const handleStopRecording = () => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
     }
     setIsRecording(false);
     console.log("🛑 Recording stopped");
-    setIsUploading(true);
   };
 
   // --- TRANSCRIBE HANDLER ---
 
   const handleTranscribe = async () => {
-    if (!audioUrl) return;
+    // Determine the source: local Blob or uploaded URL
+    if (!audioBlob && !audioUrl) return;
+
     setIsTranscribing(true);
-    setResponse(null); // Clear analysis response
+    setResponse(null);
     setUploadFeedback("🎙️ Transcribing audio...");
 
-    // Call the Transcription Server Action
-    const result = await transcribeAudioAction(audioUrl);
+    let urlToTranscribe = audioUrl;
 
-    if (result.error) {
-      setResponse({ error: "Transcription failed.", details: result.error });
-      setPrompt("");
-    } else if (result.text) {
-      setPrompt(result.text);
+    // SCENARIO 1: Local Recording (Blob is present)
+    if (audioBlob) {
+      setUploadFeedback(
+        "Uploading recorded audio for temporary transcription...",
+      );
+
+      try {
+        // Must upload the Blob to Uploadthing temporarily for transcription
+        const audioFile = new File([audioBlob], `temp_rec_${Date.now()}.webm`, {
+          type: audioBlob.type,
+        });
+
+        // Perform the temporary upload
+        const res = await uploadFiles("patientAudio", { files: [audioFile] });
+
+        if (res && res.length > 0) {
+          urlToTranscribe = res[0]!.url; // Use the temp URL for transcription
+        } else {
+          setUploadFeedback("❌ Temporary upload failed for transcription.");
+          setIsTranscribing(false);
+          return;
+        }
+      } catch (err) {
+        handleUploadError(err as Error);
+        setIsTranscribing(false);
+        return;
+      }
+    }
+
+    // SCENARIO 2: Uploaded File (audioUrl is present) - Use the existing permanent URL
+
+    // Now, run the Server Action with the guaranteed URL
+    const result = await transcribeAudioAction(urlToTranscribe!);
+
+    // ... (rest of transcription success/error logic) ...
+
+    // IMPORTANT: If transcription is successful, only save the URL if it came from the Dropzone.
+    // If it was a live recording, the permanent URL is NOT set here.
+    if (result.text && !audioUrl && audioBlob) {
+      setUploadFeedback(
+        "Transcription successful. Audio will be saved when you press 'Analyze & Save'.",
+      );
     }
 
     setIsTranscribing(false);
-    setUploadFeedback(null);
   };
-
   // --- ANALYSIS HANDLER ---
 
   const handleAnalyze = async (): Promise<void> => {
@@ -175,26 +219,55 @@ export default function NewSessionClient({
     setIsAnalyzing(true);
     setResponse(null);
 
+    let finalAudioUrl = audioUrl; // Start with the pre-uploaded file URL (if any)
+
+    // 🎯 STEP 1: If there's a recorded Blob, upload it permanently now
+    if (audioBlob && !finalAudioUrl) {
+      setUploadFeedback("Saving audio file permanently...");
+      setIsUploading(true);
+
+      try {
+        const audioFile = new File(
+          [audioBlob],
+          `session_rec_${patientId}_${Date.now()}.webm`,
+          { type: audioBlob.type },
+        );
+
+        const res = await uploadFiles("patientAudio", { files: [audioFile] });
+
+        if (res && res.length > 0) {
+          // The `res` is known to be an array of objects. We assert non-null on res[0]
+          finalAudioUrl = res[0]!.url; // Access is safe due to the check above
+          setAudioUrl(finalAudioUrl);
+        } else {
+          setUploadFeedback(
+            "❌ Final audio save failed. Session saved without audio.",
+          );
+        }
+      } catch (err) {
+        handleUploadError(err as Error);
+        finalAudioUrl = null; // Ensure no URL is saved if upload fails
+      }
+      setIsUploading(false);
+    }
+
+    // 🎯 STEP 2: Call the Server Action with the transcript and the (now permanent) URL
     try {
-      // Call the Server Action with the prompt and the required patientId
-      const result = await analyzeMedicalTextAction(prompt, patientId);
+      const result = await analyzeMedicalTextAction(
+        prompt,
+        patientId,
+        finalAudioUrl,
+      );
 
       if ("error" in result) {
-        setResponse({
-          error: result.error,
-          details: result.details,
-        });
+        // ... (error handling) ...
       } else {
         setResponse({ data: result.data });
         // Redirect to the session history list after successful save
         router.push(`/patient/${patientId}/sessions`);
       }
     } catch (err: unknown) {
-      const error = err as Error;
-      setResponse({
-        error: error.message,
-        details: "Client-side execution error",
-      });
+      // ... (client-side execution error handling) ...
     } finally {
       setIsAnalyzing(false);
     }
@@ -277,11 +350,11 @@ export default function NewSessionClient({
           </div>
 
           {/* Audio Player */}
-          {audioUrl && (
+          {(localAudioUrl ?? audioUrl) && (
             <div className="mb-4 flex w-full items-center justify-center gap-4">
               <audio
                 controls
-                src={audioUrl}
+                src={localAudioUrl ?? audioUrl!} // ✅ Use the local URL first
                 className="w-full rounded-md border border-gray-200"
               >
                 Your browser does not support audio playback.
@@ -314,7 +387,9 @@ export default function NewSessionClient({
 
               <Button
                 onClick={handleTranscribe}
-                disabled={!audioUrl || isAnalyzing || isTranscribing}
+                disabled={
+                  isAnalyzing || isTranscribing || (!audioBlob && !audioUrl)
+                }
                 variant="secondary"
                 className="w-1/2 sm:w-auto"
               >

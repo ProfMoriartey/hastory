@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { db } from "~/server/db/index"; // Adjust path if needed
-import { patients, sessions } from "~/server/db/schema";
+import { sessions } from "~/server/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, asc, and } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import PatientProfileClient from "./patient-profile-client";
 
 interface PatientProfilePageProps {

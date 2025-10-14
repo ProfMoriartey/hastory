@@ -1,7 +1,5 @@
 import { getPatientsAction } from "./actions";
 import type { Patient } from "~/server/db/schema";
-import { DataTable } from "~/components/ui/data-table";
-import { columns } from "./_components/patient-columns";
 import CreatePatientForm from "./_components/create-patient-form";
 import { auth } from "@clerk/nextjs/server";
 import { Button } from "~/components/ui/button";

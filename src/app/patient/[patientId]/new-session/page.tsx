@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
 import NewSessionClient from "./new-session-client"; // Client wrapper
 import { db } from "~/server/db/index";
-import { patients } from "~/server/db/schema";
-import { eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 
 interface NewSessionPageProps {

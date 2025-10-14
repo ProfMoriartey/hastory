@@ -1,13 +1,8 @@
 import { notFound } from "next/navigation";
 import { db } from "~/server/db/index";
-import {
-  sessions,
-  patients,
-  type Patient,
-  type Session,
-} from "~/server/db/schema";
+import { sessions, type Patient, type Session } from "~/server/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import SessionDetailClient from "./session-detail-client"; // Client wrapper
 
 interface SessionDetailPageProps {

@@ -5,15 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Patient } from "~/server/db/schema";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
-import {
-  ArrowRight,
-  Edit,
-  Trash2,
-  Loader2,
-  User,
-  Calendar,
-  Baby,
-} from "lucide-react";
+import { Edit, Trash2, Loader2, User, Calendar, Baby } from "lucide-react";
 import { deletePatientAction } from "../actions";
 import EditPatientDialog from "./edit-patient-dialog";
 import {

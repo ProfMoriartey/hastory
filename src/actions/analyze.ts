@@ -130,7 +130,7 @@ function normalizePatientHistory(data: unknown): unknown {
  * @param prompt The doctor-patient conversation text.
  * @returns Structured PatientHistory data or an error.
  */
-export async function analyzeMedicalTextAction(prompt: string, patientId: number): Promise<AnalysisResponse> {
+export async function analyzeMedicalTextAction(prompt: string, patientId: number, audioUrl: string | null = null,): Promise<AnalysisResponse> {
   if (!prompt.trim()) {
     return { error: "Missing prompt" };
   }
@@ -261,6 +261,7 @@ Rules:
       patientId: patientId,
       transcript: prompt,
       structuredData: finalData,
+      audioUrl: audioUrl, 
     }).returning({ id: sessions.id });
 
     // ✅ FIX: Check the array result for a valid record

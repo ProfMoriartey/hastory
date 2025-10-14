@@ -55,6 +55,7 @@ export const sessions = pgTable("sessions", {
   
   // The raw transcript or input text
   transcript: text("transcript").notNull(), 
+  audioUrl: text("audioUrl"),
   
   // The structured, Zod-validated JSON report data
   // Using $type ensures TypeScript knows the JSON structure

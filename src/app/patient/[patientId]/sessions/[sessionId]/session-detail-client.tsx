@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
-import { ArrowLeft, FileDown, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Trash2, Loader2 } from "lucide-react";
 import type { Patient, Session } from "~/server/db/schema";
 // Assuming ReportTemplate is located here (adjust path if needed)
 import ReportTemplate from "~/app/history/_components/ReportTemplate";
@@ -159,6 +159,20 @@ export default function SessionDetailClient({
           </CardContent>
         </Card>
       </div>
+      {session.audioUrl && (
+        <div className="mt-8 border-t pt-6">
+          <h3 className="mb-3 text-xl font-semibold text-gray-700">
+            Recorded Audio Playback
+          </h3>
+          <audio
+            controls
+            src={session.audioUrl} // ✅ Use the URL from the database
+            className="w-full rounded-lg shadow-md"
+          >
+            Your browser does not support the audio element.
+          </audio>
+        </div>
+      )}
     </main>
   );
 }
