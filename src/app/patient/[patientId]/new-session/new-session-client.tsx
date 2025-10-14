@@ -105,20 +105,12 @@ export default function NewSessionClient({
       };
 
       // 🎯 NEW: On stop, trigger the Uploadthing transfer
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         const finalBlob = new Blob(audioChunks.current, { type: mimeType });
         const url = URL.createObjectURL(finalBlob);
 
-        // ✅ FIX: Convert the Blob to a File object, providing a temporary name
-        const audioFile = new File(
-          [finalBlob],
-          `recording_${Date.now()}.${mimeType.split("/")[1] ?? "webm"}`, // Provide a name
-          { type: mimeType },
-        );
-
-        setLocalAudioUrl(url); // ✅ Set local URL for playback
-        setAudioBlob(finalBlob); // ✅ Save the Blob
-
+        setLocalAudioUrl(url); // Set local URL for playback
+        setAudioBlob(finalBlob); // Save the Blob
         setUploadFeedback(
           "Recording saved locally. Press 'Transcribe' or 'Analyze & Save'.",
         );
@@ -157,60 +149,35 @@ export default function NewSessionClient({
   // --- TRANSCRIBE HANDLER ---
 
   const handleTranscribe = async () => {
-    // Determine the source: local Blob or uploaded URL
-    if (!audioBlob && !audioUrl) return;
+    if (!audioBlob) return;
 
     setIsTranscribing(true);
     setResponse(null);
     setUploadFeedback("🎙️ Transcribing audio...");
 
-    let urlToTranscribe = audioUrl;
+    // Convert the Blob to a File object for FormData compatibility
+    const mimeType = audioBlob.type;
+    const audioFile = new File(
+      [audioBlob],
+      `recording_${Date.now()}.${mimeType.split("/")[1] ?? "webm"}`,
+      { type: mimeType },
+    );
 
-    // SCENARIO 1: Local Recording (Blob is present)
-    if (audioBlob) {
-      setUploadFeedback(
-        "Uploading recorded audio for temporary transcription...",
-      );
+    const formData = new FormData();
+    formData.append("audio", audioFile); // Append the File object
 
-      try {
-        // Must upload the Blob to Uploadthing temporarily for transcription
-        const audioFile = new File([audioBlob], `temp_rec_${Date.now()}.webm`, {
-          type: audioBlob.type,
-        });
+    // Call the Transcription Server Action with FormData
+    const result = await transcribeAudioAction(formData);
 
-        // Perform the temporary upload
-        const res = await uploadFiles("patientAudio", { files: [audioFile] });
-
-        if (res && res.length > 0) {
-          urlToTranscribe = res[0]!.url; // Use the temp URL for transcription
-        } else {
-          setUploadFeedback("❌ Temporary upload failed for transcription.");
-          setIsTranscribing(false);
-          return;
-        }
-      } catch (err) {
-        handleUploadError(err as Error);
-        setIsTranscribing(false);
-        return;
-      }
-    }
-
-    // SCENARIO 2: Uploaded File (audioUrl is present) - Use the existing permanent URL
-
-    // Now, run the Server Action with the guaranteed URL
-    const result = await transcribeAudioAction(urlToTranscribe!);
-
-    // ... (rest of transcription success/error logic) ...
-
-    // IMPORTANT: If transcription is successful, only save the URL if it came from the Dropzone.
-    // If it was a live recording, the permanent URL is NOT set here.
-    if (result.text && !audioUrl && audioBlob) {
-      setUploadFeedback(
-        "Transcription successful. Audio will be saved when you press 'Analyze & Save'.",
-      );
+    if (result.error) {
+      setResponse({ error: "Transcription failed.", details: result.error });
+      setPrompt("");
+    } else if (result.text) {
+      setPrompt(result.text);
     }
 
     setIsTranscribing(false);
+    setUploadFeedback(null);
   };
   // --- ANALYSIS HANDLER ---
 
@@ -218,52 +185,55 @@ export default function NewSessionClient({
     if (!prompt.trim()) return;
     setIsAnalyzing(true);
     setResponse(null);
+    setUploadFeedback(null);
 
-    let finalAudioUrl = audioUrl; // Start with the pre-uploaded file URL (if any)
+    let finalAudioUrl: string | null = null;
 
-    // 🎯 STEP 1: If there's a recorded Blob, upload it permanently now
-    if (audioBlob && !finalAudioUrl) {
+    // 🎯 STEP 1: Upload the Blob (if available) to Uploadthing for permanent storage
+    if (audioBlob) {
       setUploadFeedback("Saving audio file permanently...");
       setIsUploading(true);
 
       try {
+        // Convert Blob to File
         const audioFile = new File(
           [audioBlob],
           `session_rec_${patientId}_${Date.now()}.webm`,
           { type: audioBlob.type },
         );
 
+        // Perform the permanent upload
         const res = await uploadFiles("patientAudio", { files: [audioFile] });
 
         if (res && res.length > 0) {
-          // The `res` is known to be an array of objects. We assert non-null on res[0]
-          finalAudioUrl = res[0]!.url; // Access is safe due to the check above
-          setAudioUrl(finalAudioUrl);
+          finalAudioUrl = res[0]!.url;
+          setAudioUrl(finalAudioUrl); // Update permanent state
         } else {
           setUploadFeedback(
             "❌ Final audio save failed. Session saved without audio.",
           );
         }
       } catch (err) {
-        handleUploadError(err as Error);
-        finalAudioUrl = null; // Ensure no URL is saved if upload fails
+        console.error("Final Upload Error:", err);
+        finalAudioUrl = null;
       }
       setIsUploading(false);
     }
 
-    // 🎯 STEP 2: Call the Server Action with the transcript and the (now permanent) URL
+    // 🎯 STEP 2: Call the Server Action with the prompt and the (now permanent) URL
     try {
+      // NOTE: We pass finalAudioUrl which is null if no recording was made/uploaded
       const result = await analyzeMedicalTextAction(
         prompt,
         patientId,
         finalAudioUrl,
       );
 
+      // ... (rest of error/success handling) ...
       if ("error" in result) {
         // ... (error handling) ...
       } else {
         setResponse({ data: result.data });
-        // Redirect to the session history list after successful save
         router.push(`/patient/${patientId}/sessions`);
       }
     } catch (err: unknown) {
